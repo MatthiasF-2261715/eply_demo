@@ -6,9 +6,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Mail, Settings, BarChart3, Clock, Users, ArrowRight, LogOut } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, useRef } from 'react';
+import { useErrorHandler } from '@/hooks/useErrorHandler';
 
 export default function Dashboard() {
   const router = useRouter();
+  const { handleError, handleSuccess } = useErrorHandler();
   const [loading, setLoading] = useState(true);
   const [username, setUsername] = useState<string | null>(null);
   const [emails, setEmails] = useState<any[]>([]);
@@ -38,9 +40,7 @@ export default function Dashboard() {
             } catch {
               router.replace(target);
             }
-        } else {
-          console.log('User is whitelisted');
-        }
+        } 
       })
       .catch(() => {
         const target = `${BACKEND_URL}/auth/signoutContact`;
@@ -66,7 +66,6 @@ export default function Dashboard() {
           router.replace('/');
         } else {
           const data = await res.json();
-          console.log('User profile data:', data);
           if (isMounted) setUsername(data.username);
         }
       })
@@ -87,14 +86,10 @@ export default function Dashboard() {
 
   const handleGenerateReply = async (emailToReply = null) => {
     const targetEmail = emailToReply || (emails.length ? emails[0] : null);
-    
     if (!targetEmail) return;
 
     const emailId = targetEmail.id || targetEmail.subject;
-
     setLoadingReplies(prev => new Set(prev).add(emailId));
-
-    console.log('Geselecteerde e-mail voor antwoord:', targetEmail);
 
     // Handle different email formats (IMAP vs Outlook)
     const emailAddress = targetEmail.from?.emailAddress?.address || targetEmail.from;
@@ -103,7 +98,6 @@ export default function Dashboard() {
     const originalMailId = targetEmail.id || '';
 
     if (!emailAddress || !title || !content) {
-      console.log('Geen geldig e-mailadres of content gevonden.');
       setLoadingReplies(prev => {
         const newSet = new Set(prev);
         newSet.delete(emailId);
@@ -112,14 +106,7 @@ export default function Dashboard() {
       return;
     }
 
-    try {
-      console.log('Verzoek verzenden naar AI Reply endpoint met payload:', {
-        email: emailAddress,
-        title: title,
-        content: content,
-        originalMailId: originalMailId
-      });
-      
+    try {      
       const response = await fetch(`${BACKEND_URL}/users/ai/reply`, { 
         method: 'POST',
         headers: {
@@ -140,18 +127,19 @@ export default function Dashboard() {
       }
 
       const data = await response.json();
-
+      
       if (data.skip) {
-        console.log('Email overgeslagen:', data.reason);
+        handleError({
+          message: 'Deze e-mail is overgeslagen omdat het mogelijk spam of reclame betreft.'
+        });
         return;
       }
       
       setCurrentReply(data.response || 'Geen antwoord ontvangen');
       setShowReplyPopup(true);
+      handleSuccess('AI antwoord gegenereerd');
     } catch (err) {
-      console.error('AI Reply Error:', err);
-      setCurrentReply(`Fout bij AI reply ophalen: ${err}`);
-      setShowReplyPopup(true);
+      handleError(err);
     } finally {
       setLoadingReplies(prev => {
         const newSet = new Set(prev);
@@ -171,37 +159,34 @@ export default function Dashboard() {
         });
 
         if (!res.ok || res.redirected) {
-          setEmailsError('Niet ingelogd of sessie verlopen.');
-          setEmails([]);
-        } else {
-          const data = await res.json();
-          const newEmails = Array.isArray(data) ? data : data.mails || [];
-          console.log('Parsed emails:', newEmails);
-          setEmails(newEmails);
+          throw new Error('Niet ingelogd of sessie verlopen.');
+        }
 
-          if (newEmails.length > 0) {
-            const latestEmail = newEmails[0];
-            const emailTime = new Date(latestEmail.date).getTime();
-            
-            // Only generate reply if email is newer than last check AND not processed before
-            if (!isInitialLoad.current && 
-                emailTime > lastCheckTime && 
-                !processedEmailIds.has(latestEmail.id)) {
-              console.log('Nieuwe email gevonden, genereer antwoord...');
-              await handleGenerateReply(latestEmail);
-              // Add email ID to processed set
-              setProcessedEmailIds(prev => new Set(prev).add(latestEmail.id));
-            }
-            
-            if (isInitialLoad.current) {
-              isInitialLoad.current = false;
-            }
-            
-            setLastCheckTime(Date.now());
+        const data = await res.json();
+        const newEmails = Array.isArray(data) ? data : data.mails || [];
+        setEmails(newEmails);
+
+        if (newEmails.length > 0) {
+          const latestEmail = newEmails[0];
+          const emailTime = new Date(latestEmail.date).getTime();
+          
+          // Only generate reply if email is newer than last check AND not processed before
+          if (!isInitialLoad.current && 
+              emailTime > lastCheckTime && 
+              !processedEmailIds.has(latestEmail.id)) {
+            await handleGenerateReply(latestEmail);
+            // Add email ID to processed set
+            setProcessedEmailIds(prev => new Set(prev).add(latestEmail.id));
           }
+          
+          if (isInitialLoad.current) {
+            isInitialLoad.current = false;
+          }
+          
+          setLastCheckTime(Date.now());
         }
       } catch (error) {
-        setEmailsError('Fout bij ophalen van e-mails.');
+        handleError(error);
         setEmails([]);
       } 
     };

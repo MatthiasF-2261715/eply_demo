@@ -2,11 +2,10 @@
 
 import { useState } from 'react';
 import { Mail, User, MessageSquare, Send } from 'lucide-react';
-
-const WEB3FORMS_ACCESS_KEY = process.env.NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY;
-const WEB3FORMS_URL = 'https://api.web3forms.com/submit';
+import { useErrorHandler } from '@/hooks/useErrorHandler';
 
 export default function Contact() {
+  const { handleError, handleSuccess } = useErrorHandler();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -24,26 +23,28 @@ export default function Contact() {
 
     try {
       const formDataToSend = new FormData();
-      formDataToSend.append('access_key', WEB3FORMS_ACCESS_KEY || '');
       formDataToSend.append('name', formData.name);
       formDataToSend.append('email', formData.email);
       formDataToSend.append('message', formData.message);
       formDataToSend.append('botcheck', '');
 
-      const res = await fetch(WEB3FORMS_URL, {
+      const res = await fetch('/api/contact', {
         method: 'POST',
-        body: formDataToSend,
+        body: formDataToSend
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : null;
 
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || 'Versturen mislukt.');
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.message || 'Versturen mislukt.');
       }
 
-      setStatus({ type: 'success', msg: 'Bericht verstuurd. We nemen snel contact op.' });
+      handleSuccess('Bericht verstuurd. We nemen snel contact op.');
+      setStatus({ type: 'success' });
       setFormData({ name: '', email: '', message: '' });
     } catch (err: any) {
+      handleError(err);
       setStatus({ type: 'error', msg: err.message || 'Er ging iets mis.' });
     }
   };
@@ -62,7 +63,7 @@ export default function Contact() {
             Klaar om te starten?
           </h2>
           <p className="text-xl text-gray-600">
-            Boek een gratis demo en ontdek wat Eply voor jou kan betekenen
+            Boek een gratis demo en ontdek wat Eply voor jou kan betekenen.
           </p>
         </div>
 
@@ -81,7 +82,6 @@ export default function Contact() {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-6">
-              <input type="hidden" name="access_key" value={WEB3FORMS_ACCESS_KEY || ''} />
               <input type="checkbox" name="botcheck" className="hidden" style={{ display: 'none' }} tabIndex={-1} autoComplete="off" />
 
               <div>
@@ -133,7 +133,7 @@ export default function Contact() {
                     required
                     rows={5}
                     className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#3B82F6] focus:border-transparent outline-none transition-all resize-none"
-                    placeholder="Waarmee kunnen we jou helpen?"
+                    placeholder="Omschrijving"
                   />
                 </div>
               </div>

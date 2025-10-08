@@ -8,6 +8,8 @@ var express = require('express');
 const authProvider = require('../auth/AuthProvider');
 const Imap = require('imap');
 const { FRONTEND_URL, BACKEND_URL, REDIRECT_URI, POST_LOGOUT_REDIRECT_URI } = require('../auth/authConfig');
+const { isUserWhitelisted } = require('../database');
+const { imapLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
@@ -19,10 +21,23 @@ router.get('/outlook-login', (req, res, next) => {
     })(req, res, next);
 });
 
-router.post('/imap-login', async (req, res) => {
+router.post('/imap-login', imapLimiter, async (req, res) => {
     const { email, password, imapServer, port } = req.body;
     if (!email || !password || !imapServer || !port) {
         return res.status(400).json({ error: 'Vul alle velden in.' });
+    }
+
+    try {
+        const whitelisted = await isUserWhitelisted(email);
+        if (!whitelisted) {
+            return res.status(403).json({ 
+                error: 'Geen toegang. Neem contact op met de beheerder.',
+                redirectUrl: `${FRONTEND_URL}/#contact`
+            });
+        }
+    } catch (err) {
+        console.error('[Whitelist] Error:', err);
+        return res.status(500).json({ error: 'Fout bij controleren toegang.' });
     }
 
     const imap = new Imap({
@@ -59,7 +74,6 @@ router.post('/imap-login', async (req, res) => {
                 // Ignore cleanup errors
             }
             if (connectionAttempts < maxAttempts) {
-                console.log(`[IMAP] Timeout - Retrying connection (${connectionAttempts}/${maxAttempts})`);
                 setTimeout(attemptConnection, 3000);
             } else {
                 res.status(408).json({ 
@@ -139,15 +153,15 @@ router.get('/signout', (req, res, next) => {
 router.get('/signoutContact', (req, res, next) => {
     if (req.session.method === 'outlook') {
         authProvider.logout({
-            postLogoutRedirectUri: `${POST_LOGOUT_REDIRECT_URI}/contact`
+            postLogoutRedirectUri: `${POST_LOGOUT_REDIRECT_URI}/#contact`
         })(req, res, next);
     } else if (req.session.method === 'imap') {
         req.session.destroy(() => {
-            res.redirect(`${POST_LOGOUT_REDIRECT_URI}/contact`);
+            res.redirect(`${POST_LOGOUT_REDIRECT_URI}/#contact`);
         });
     } else {
         req.session.destroy(() => {
-            res.redirect(`${POST_LOGOUT_REDIRECT_URI}/contact`);
+            res.redirect(`${POST_LOGOUT_REDIRECT_URI}/#contact`);
         });
     }
 });
