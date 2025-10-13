@@ -8,6 +8,18 @@ import { useRouter } from 'next/navigation';
 import { useState, useEffect, useRef } from 'react';
 import { useErrorHandler } from '@/hooks/useErrorHandler';
 
+type ErrorType = {
+  message: string;
+  skipError: boolean;
+  retryFn?: () => void;
+} | null;
+
+type ErrorPopupProps = {
+  error: ErrorType;
+  onClose: () => void;
+  onRetry: () => void;
+};
+
 export default function Dashboard() {
   const router = useRouter();
   const { handleError, handleSuccess } = useErrorHandler();
@@ -23,6 +35,7 @@ export default function Dashboard() {
   const [loadingReplies, setLoadingReplies] = useState<Set<string>>(new Set());
   const [whitelistDone, setWhitelistDone] = useState(false);
   const [profileDone, setProfileDone] = useState(false);
+  const [error, setError] = useState<ErrorType>(null);
 
   const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 
@@ -84,7 +97,7 @@ export default function Dashboard() {
     }
   }, [whitelistDone, profileDone]);
 
-  const handleGenerateReply = async (emailToReply = null) => {
+  const handleGenerateReply = async (emailToReply = null, force = false) => {
     const targetEmail = emailToReply || (emails.length ? emails[0] : null);
     if (!targetEmail) return;
 
@@ -117,7 +130,8 @@ export default function Dashboard() {
           email: emailAddress,
           title: title,
           content: content,
-          originalMailId: originalMailId
+          originalMailId: originalMailId,
+          force: force
         })
       });
 
@@ -129,8 +143,10 @@ export default function Dashboard() {
       const data = await response.json();
       
       if (data.skip) {
-        handleError({
-          message: 'Deze e-mail is overgeslagen omdat het mogelijk spam of reclame betreft.'
+        setError({
+          message: 'Deze e-mail is overgeslagen omdat het mogelijk spam, reclame of een automatisch bericht betreft.',
+          skipError: true,
+          retryFn: () => handleGenerateReply(emailToReply, true)
         });
         return;
       }
@@ -220,6 +236,56 @@ export default function Dashboard() {
     );
   };
 
+  const ErrorPopup = ({ error, onClose, onRetry }: ErrorPopupProps) => {
+    if (!error || !error.skipError) return null;
+
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      >
+        <motion.div
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.95, opacity: 0 }}
+          className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden"
+        >
+          <div className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-yellow-100 rounded-lg">
+                <Mail className="w-5 h-5 text-yellow-600" />
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900">Let op</h3>
+            </div>
+            
+            <p className="text-gray-600 mb-6">
+              {error.message}
+            </p>
+
+            <div className="flex gap-3">
+              <Button 
+                onClick={onClose}
+                variant="outline"
+                className="flex-1 h-11 rounded-full border-gray-300 text-gray-600 hover:bg-gray-50 hover:border-gray-400"
+              >
+                Overslaan
+              </Button>
+              <Button 
+                onClick={onRetry}
+                className="flex-1 h-11 rounded-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white"
+              >
+                Toch genereren
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -302,6 +368,16 @@ export default function Dashboard() {
         </div>
       </div>
       <ReplyPopup />
+      <ErrorPopup 
+        error={error}
+        onClose={() => setError(null)}
+        onRetry={() => {
+          if (error?.retryFn) {
+            error.retryFn();
+            setError(null);
+          }
+        }}
+      />
     </div>
   );
 }

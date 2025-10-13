@@ -182,15 +182,19 @@ async function createOutlookDraft(session, ai_reply, mail_id) {
         const draftReply = await client
             .api(`/me/messages/${mail_id}/createReply`)
             .post();
+
+        
         const aiReplyHtml = formatAiReplyForHtml(ai_reply);
+
         const updatedDraft = await client
             .api(`/me/messages/${draftReply.id}`)
             .update({
                 body: {
-                    contentType: 'HTML',
-                    content: aiReplyHtml
+                    contentType: "HTML",
+                    content: aiReplyHtml + draftReply.body.content
                 }
             });
+
         return updatedDraft;
     } catch (error) {
         console.error('Error creating Outlook reply draft:', error);
