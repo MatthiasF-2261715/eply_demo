@@ -1,71 +1,6 @@
-const natural = require('natural');
+const { OpenAI } = require('openai');
 
-const tokenizer = new natural.WordTokenizer();
-const classifier = new natural.BayesClassifier();
-
-const spamExamples = [
-  'unsubscribe',
-  'click here',
-  'limited time offer',
-  'special offer',
-  'sale',
-  'discount',
-  'buy now',
-  'order confirmation',
-  'your verification code is',
-  'verification code',
-  'use code',
-  'do not reply',
-  'this is an automated message',
-  'system notification',
-  'account verification',
-  'nieuwsbrief',
-  'promotie',
-  'aanbieding',
-  'automatische e-mail',
-  'betaling is verwerkt',
-  'wachtwoord reset',
-  'reset je wachtwoord'
-];
-
-const hamExamples = [
-  'kan je me helpen',
-  'zijn we beschikbaar om te overleggen',
-  'stukje feedback',
-  'bijgevoegd document',
-  'kun je dit reviewen',
-  'vraag over factuur',
-  'hoe gaat het',
-  'groeten',
-  'vriendelijke groeten',
-  'bedankt voor je tijd',
-  'afspraak',
-  'vraag',
-  'hoeveel verdien ik per uur',
-  'wat zijn de werktijden',
-  'hoe werkt het sollicitatieproces',
-  'kan ik morgen werken',
-  'hoe meld ik mij aan',
-  'wat zijn de voorwaarden',
-  'hoe kan ik contact opnemen',
-  'hoe werkt het bij jullie',
-  'kan ik meer informatie krijgen',
-  'hoe ziet een werkdag eruit',
-  'hoe word ik uitbetaald',
-  'hoe kan ik mij inschrijven',
-  'hoeveel krijg ik betaald',
-  'hoe werkt het rooster',
-  'kan ik mijn beschikbaarheid doorgeven',
-  'hoe werkt het systeem',
-  'hoe kan ik mijn gegevens aanpassen',
-  'hoe werkt het met vakantiedagen',
-  'hoe kan ik feedback geven',
-  'hoe werkt het onboardingproces'
-];
-
-spamExamples.forEach(t => classifier.addDocument(t, 'spam'));
-hamExamples.forEach(t => classifier.addDocument(t, 'ham'));
-classifier.train();
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 function isNoReplyAddress(email) {
   const noReplyPatterns = [
@@ -80,58 +15,22 @@ function isNoReplyAddress(email) {
   return noReplyPatterns.some(pattern => pattern.test(email));
 }
 
-function heuristicCheck(content) {
-  if (!content || typeof content !== 'string') return false;
-
-  const lc = content.toLowerCase();
-
-  const codePattern = /\b(code|verification|verificatie|pin|otp)[^\n\r]{0,20}\b\d{4,8}\b/mi;
-  if (codePattern.test(content)) return true;
-
-  const autoIndicators = [
-    'unsubscribe',
-    'abmelden',
-    'nieuwsbrief',
-    'promotion',
-    'promotie',
-    'sale',
-    'aanbieding',
-    'limited time',
-    'do not reply',
-    'no-reply',
-    'click here',
-    'bestel',
-    'order confirmation',
-    'betalingsbewijs',
-    'automated message',
-    'this is an automated'
-  ];
-  if (autoIndicators.some(i => lc.includes(i))) return true;
-
-  const linkCount = (content.match(/https?:\/\/[^\s]+/g) || []).length;
-  if (linkCount >= 3) return true;
-
-  return false;
-}
-
-function classifyWithLocalModel(content) {
-  if (!content || typeof content !== 'string') return false;
-  const tokens = tokenizer.tokenize(content.toLowerCase()).slice(0, 200).join(' ');
-  try {
-    const label = classifier.classify(tokens);
-    return label === 'spam';
-  } catch (e) {
-    console.error('Classifier error:', e);
-    return false;
-  }
-}
-
 async function checkWithAI(emailContent) {
   try {
-    if (heuristicCheck(emailContent)) return true;
-    return classifyWithLocalModel(emailContent);
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [{
+        role: "system",
+        content: "Analyze if this email appears to be spam, automated, or a marketing message. Respond only with true (if it's spam/automated) or false (if it's a regular email that needs a response)."
+      }, {
+        role: "user",
+        content: emailContent
+      }]
+    });
+    
+    return completion.choices[0].message.content.toLowerCase() === 'true';
   } catch (error) {
-    console.error('Local check error:', error);
+    console.error('AI check error:', error);
     return false;
   }
 }
@@ -142,8 +41,8 @@ async function validateEmail(emailAddress, emailContent) {
   }
 
   try {
-    const isSpamOrAutomated = await checkWithAI(emailContent);
-    return !isSpamOrAutomated;
+    const isSpam = await checkWithAI(emailContent);
+    return !isSpam;
   } catch (error) {
     console.error('Email validation error:', error);
     return true;

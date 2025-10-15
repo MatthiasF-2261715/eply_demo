@@ -70,11 +70,12 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <Link href="/imap">
-            <a className="w-full bg-[#3B82F6] text-white py-4 px-6 rounded-xl hover:bg-[#2563EB] transition-all hover:-translate-y-1 shadow-lg hover:shadow-xl flex items-center justify-center gap-3 text-lg font-semibold">
-              <Server className="w-6 h-6" />
-              Inloggen via IMAP
-            </a>
+          <Link 
+            href="/imap"
+            className="w-full bg-[#3B82F6] text-white py-4 px-6 rounded-xl hover:bg-[#2563EB] transition-all hover:-translate-y-1 shadow-lg hover:shadow-xl flex items-center justify-center gap-3 text-lg font-semibold"
+          >
+            <Server className="w-6 h-6" />
+            Inloggen via IMAP
           </Link>
         </div>
 
